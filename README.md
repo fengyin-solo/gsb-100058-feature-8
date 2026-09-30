@@ -55,7 +55,7 @@ npm run dev
 | 地球物理 | `geophysics` | 物探测线 | 测线编号、勘探区、物探方法 |
 | 化探分析 | `geochem` | 化探样品 | 样品编号、样品类型、采样点位 |
 | 化验数据 | `assay` | 化验结果 | 化验编号、样品编号、元素名称 |
-| 地质填图 | `mapping` | 填图单元 | 图幅编号、图幅名称、比例尺 |
+| 地质填图 | `mapping` | 填图单元/成果图版本轨道 | 图幅编号、图幅名称、比例尺、确认版本 |
 | 测绘控制 | `survey_point` | 控制点 | 点号、点类型、坐标X |
 | 钻探日志 | `drilling_log` | 钻探记录 | 日志编号、钻孔编号、钻进深度 |
 | 储量估算 | `reserve` | 矿体块段 | 块段编号、矿体名称、面积 |
@@ -74,3 +74,16 @@ npm run dev
   `backend/app/routers/<模块>.py`，业务规则在 `backend/app/services/<模块>.py`。
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
+- 地质填图的草图不单独存库，统一走 `app/versioning.py` 的成果图版本轨道：
+  - 单元身份 = 图幅编号 + 比例尺；同编号不同比例尺是独立轨道，修订互不覆盖。
+  - 拖动边界先暂存草稿（`POST /api/mapping/draft`），「提交确认」
+    （`POST /api/mapping/revisions`）才在事件流追加一个确认版本；
+    乐观锁校验 `expected_revision`，冲突返回 409，并发修订只落一个版本。
+  - 填图详情（`/api/mapping`）、图幅名称目录（`/api/mapping/catalog`）、
+    报告引用汇总（`/api/mapping/references`）全部由事件投影重放生成，不各存副本；
+    报告引用登记时钉住修订号，可经 `/api/mapping/references/repin` 显式跟进最新版。
+  - 提交在单个事务内完成，事件非法时目录与地图标注一起回滚；
+    `POST /api/mapping/replay` 丢弃投影、从事件流完整重建。
+  - 启动时旧图幅记录（无修订号）自动迁移为 `initial_import` 事件（R1），
+    既有成果按原审定版本保留。
+- 后端单元测试：`cd backend && PYTHONPATH=. python -m unittest discover -s tests`。
