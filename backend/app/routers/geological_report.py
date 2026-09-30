@@ -5,8 +5,9 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.schemas import ActionResult, EntryPayload, PageResult
+from app.schemas import ActionResult, EntryPayload, PageResult, ReportCitationPayload
 from app.services.geological_report import GeologicalReportService
+from app.versioning import VersionError
 
 router = APIRouter(prefix="/api/geological_report", tags=["地质报告"])
 
@@ -30,6 +31,46 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/citations/summary")
+def citation_summary(
+    report_no: str | None = Query(default=None, description="按报告编号过滤"),
+) -> dict[str, Any]:
+    """报告引用汇总清单：引用结论从填图版本轨道重放，与成果图始终对得上。"""
+    items = service.citations(report_no=report_no)
+    aligned = sum(1 for item in items if "引用是否对得上" in item and item["引用是否对得上"])
+    return {
+        "module": "geological_report",
+        "view": "citation_summary",
+        "total": len(items),
+        "aligned": aligned,
+        "stale": len(items) - aligned,
+        "items": items,
+    }
+
+
+@router.post("/citations", response_model=ActionResult)
+def register_citation(payload: ReportCitationPayload) -> ActionResult:
+    """登记报告对成果图版本的引用：只保存版本指针，不复制结论。"""
+    try:
+        entry = service.cite(
+            report_no=payload.report_no,
+            sheet_no=payload.sheet_no,
+            scale=payload.scale,
+            pinned_revision=payload.pinned_revision,
+            remark=payload.remark or "",
+        )
+    except VersionError as exc:
+        return ActionResult(ok=False, message=str(exc))
+    return ActionResult(ok=True, message="报告引用已登记，引用结论按版本轨道重放", entry=entry)
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出地质报告清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "geological_report", "total": total, "items": items}
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条勘探报告明细；不存在时给出可读的错误说明。"""
@@ -51,15 +92,8 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     """对单条勘探报告执行提交内审、提交外审、确认定稿；不允许的动作会被拦下并说明原因。"""
-    action = str(payload.values.get("action") or "").strip()
+    action = str(payload.action or payload.values.get("action") or "").strip()
     entry, message = service.run_action(entry_id, action)
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出地质报告清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "geological_report", "total": total, "items": items}

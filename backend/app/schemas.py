@@ -24,7 +24,39 @@ class ActionResult(BaseModel):
 class EntryPayload(BaseModel):
     """登记或修改一条业务记录时提交的字段集合。"""
 
+    model_config = {"extra": "allow"}
+
     values: dict[str, Any] = Field(default_factory=dict)
+    remark: str | None = None
+    # 前端动作按钮直接提交 {"action": "..."}，这里兼容两种包法
+    action: str | None = None
+
+
+class BoundaryRevisionPayload(BaseModel):
+    """成果图版本轨道：拖动单元边界后提交的一版修订（乐观锁）。"""
+
+    geometry: list[list[float]] = Field(default_factory=list)
+    expected_revision: int = Field(description="提交时本地看到的最新确认版本号")
+    note: str | None = None
+    editor: str | None = None
+
+
+class ConfirmRevisionPayload(BaseModel):
+    """确认结论：把待确认草稿确认为成果图正式版本。"""
+
+    revision: int = Field(description="待确认草稿的修订号")
+    expected_revision: int = Field(description="提交时本地看到的最新确认版本号")
+    conclusion: str = Field(description="审定结论，如：合格、需补测、退回修编")
+    editor: str | None = None
+
+
+class ReportCitationPayload(BaseModel):
+    """报告引用登记：只钉版本指针，结论始终由版本轨道重放得到。"""
+
+    report_no: str
+    sheet_no: str
+    scale: str
+    pinned_revision: int | None = None
     remark: str | None = None
 
 

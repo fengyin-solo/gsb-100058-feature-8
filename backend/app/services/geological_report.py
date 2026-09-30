@@ -1,9 +1,14 @@
-"""地质报告业务规则：状态流转、字段校验与筛选口径都收在这里。"""
+"""地质报告业务规则：状态流转、字段校验与成果图引用汇总。
+
+报告引用只钉成果图的（图幅、比例尺、版本号）指针，引用结论由填图版本轨道
+重放得到，避免报告侧和成果图侧各存一套结论。
+"""
 from __future__ import annotations
 
 from typing import Any
 
 from app.store import store
+from app.versioning import VersionError, version_store
 
 MODULE = "geological_report"
 REQUIRED_FIELDS = ["报告编号", "勘探区", "报告类型"]
@@ -59,3 +64,25 @@ class GeologicalReportService:
         entry["pending"] = target != STATUS_ORDER[-1]
         entry["abnormal"] = action in NEGATIVE_ACTIONS
         return entry, f"勘探报告已{action}"
+
+    # ---- 成果图引用汇总清单 ----
+
+    def citations(self, report_no: str | None = None) -> list[dict[str, Any]]:
+        return version_store.citations(report_no=report_no)
+
+    def cite(
+        self,
+        *,
+        report_no: str,
+        sheet_no: str,
+        scale: str,
+        pinned_revision: int | None = None,
+        remark: str = "",
+    ) -> dict[str, Any]:
+        return version_store.cite(
+            report_no=report_no,
+            sheet_no=sheet_no,
+            scale=scale,
+            pinned_revision=pinned_revision,
+            remark=remark,
+        )
